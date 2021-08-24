@@ -1,3 +1,14 @@
+/*
+A hack for Wyrmsun that will automatically create worker units out of the currently selected structure when a player's gold is over 3000. 
+It accomplishes this by filling the current unit buffer with worker data and then calling the create unit function in the game.
+
+After injecting this hack, go in game and recruit a worker. Then select a structure as you collect gold. 
+You will notice workers being queued automatically.
+
+Due to the way Wyrmsun handles recruitment, it is possible to create units out of whatever is selected, including other units.
+
+The technique and offsets used are discussed here: https://gamehacking.academy/lesson/41
+*/
 #include <Windows.h>
 
 HANDLE wyrmsun_base;
@@ -13,6 +24,9 @@ DWORD gameloop_ret_address;
 DWORD gameloop_call_address;
 DWORD *gold_base, *gold;
 
+// The recruit unit codecave hooks the game's recruit unit function
+// It's main job is to copy a valid buffer of data for a worker unit
+// instead of having to reverse the structure
 __declspec(naked) void recruit_unit_codecave() {
     __asm {
         pushad
@@ -32,6 +46,9 @@ __declspec(naked) void recruit_unit_codecave() {
     }
 }
 
+// In the main game loop, our codecave will check the current player's gold
+// If it is over 3000, and we have a valid worker buffer, call the recruit unit function
+// with worker data.
 __declspec(naked) void gameloop_codecave() {
     __asm {
         pushad
@@ -62,10 +79,14 @@ __declspec(naked) void gameloop_codecave() {
     }
 }
 
+// When our DLL is attached, unprotect the memory at the code we wish to write at
+// Then set the first opcode to E9, or jump
+// Caculate the location using the formula: new_location - original_location+5
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 	DWORD old_protect;
 
 	if (fdwReason == DLL_PROCESS_ATTACH) {
+		// Since Wyrmsun loads code dynamically, we need to calculate offsets based of the base address of the main module
 		wyrmsun_base = GetModuleHandle(L"wyrmsun.exe");
 
 		unsigned char* hook_location = (unsigned char*)((DWORD)wyrmsun_base + 0x223471);
